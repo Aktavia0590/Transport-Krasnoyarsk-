@@ -8,23 +8,34 @@ jobs:
     runs-on: ubuntu-24.04
 
     steps:
+
+      # =========================
+      # 1. Скачать репозиторий
+      # =========================
       - name: Checkout
         uses: actions/checkout@v5
 
+
+      # =========================
+      # 2. Распаковать ZIP проекта
+      # =========================
       - name: Extract project
         shell: bash
         run: |
+          set -e
+
           rm -rf project
           mkdir project
 
           ZIP_FILE=$(find . -maxdepth 1 -type f -name "*.zip" | head -n 1)
 
           if [ -z "$ZIP_FILE" ]; then
-            echo "ZIP file not found"
+            echo "ERROR: ZIP file not found"
             exit 1
           fi
 
           echo "Using ZIP: $ZIP_FILE"
+
           unzip -o "$ZIP_FILE" -d project
 
           cd project
@@ -35,20 +46,36 @@ jobs:
             rmdir "Мой_билет_Android_simple"
           fi
 
-          echo "Project files:"
+          echo ""
+          echo "===== PROJECT ROOT ====="
           ls -la
 
+          echo ""
+          echo "===== SOURCE ====="
+          ls -la src
+
+
+      # =========================
+      # 3. Исправить React Router
+      # =========================
       - name: Repair React navigation
         working-directory: project
         shell: bash
         run: |
+          set -e
+
           python3 - <<'PY'
           from pathlib import Path
 
           app = Path("src/App.jsx")
 
           app.write_text(r'''import React from "react";
-          import { MemoryRouter as Router, Routes, Route, useLocation } from "react-router-dom";
+          import {
+            MemoryRouter as Router,
+            Routes,
+            Route,
+            useLocation
+          } from "react-router-dom";
 
           import Home from "./pages/Home";
           import History from "./pages/History";
@@ -60,11 +87,16 @@ jobs:
           class ErrorBoundary extends React.Component {
             constructor(props) {
               super(props);
-              this.state = { error: null };
+
+              this.state = {
+                error: null
+              };
             }
 
             static getDerivedStateFromError(error) {
-              return { error };
+              return {
+                error
+              };
             }
 
             render() {
@@ -79,18 +111,28 @@ jobs:
                       justifyContent: "center",
                       padding: 24,
                       textAlign: "center",
-                      fontFamily: "Arial, sans-serif"
+                      fontFamily: "Arial, sans-serif",
+                      background: "#f9faff"
                     }}
                   >
-                    <h2>Произошла ошибка</h2>
+                    <h2 style={{ marginBottom: 10 }}>
+                      Произошла ошибка
+                    </h2>
 
-                    <p style={{ color: "#666", maxWidth: 500 }}>
+                    <p
+                      style={{
+                        color: "#666",
+                        maxWidth: 500,
+                        lineHeight: 1.5
+                      }}
+                    >
                       Экран не удалось загрузить.
                     </p>
 
                     <button
                       onClick={() => window.location.reload()}
                       style={{
+                        marginTop: 16,
                         padding: "12px 20px",
                         borderRadius: 10,
                         border: 0,
@@ -126,198 +168,4 @@ jobs:
                   minHeight: "100vh",
                   display: "flex",
                   alignItems: "center",
-                  justifyContent: "center",
-                  flexDirection: "column",
-                  gap: 12
-                }}
-              >
-                <h2>Страница не найдена</h2>
-                <button onClick={() => window.history.back()}>
-                  Назад
-                </button>
-              </div>
-            );
-          }
-
-          export default function App() {
-            return (
-              <ErrorBoundary>
-                <Router initialEntries={["/"]}>
-                  <ScrollToTop />
-
-                  <Routes>
-                    <Route path="/" element={<Home />} />
-                    <Route path="/history" element={<History />} />
-                    <Route path="/payment" element={<Payment />} />
-                    <Route path="/menu" element={<Menu />} />
-                    <Route path="/scan" element={<Scan />} />
-                    <Route path="*" element={<NotFound />} />
-                  </Routes>
-                </Router>
-
-                <Toaster />
-              </ErrorBoundary>
-            );
-          }
-          ''', encoding="utf-8")
-
-          nav = Path("src/components/BottomNav.jsx")
-
-          nav.write_text(r'''import React from "react";
-          import { Ticket, History, CreditCard, Menu as MenuIcon } from "lucide-react";
-          import { useNavigate } from "react-router-dom";
-
-          export default function BottomNav({ active }) {
-            const navigate = useNavigate();
-
-            const items = [
-              {
-                id: "ticket",
-                label: "Билет",
-                icon: Ticket,
-                path: "/"
-              },
-              {
-                id: "history",
-                label: "История",
-                icon: History,
-                path: "/history"
-              },
-              {
-                id: "payment",
-                label: "Оплата",
-                icon: CreditCard,
-                path: "/payment"
-              },
-              {
-                id: "menu",
-                label: "Меню",
-                icon: MenuIcon,
-                path: "/menu"
-              }
-            ];
-
-            return (
-              <nav
-                style={{
-                  position: "fixed",
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  zIndex: 50
-                }}
-              >
-                <div>
-                  {items.map((item) => {
-                    const Icon = item.icon;
-                    const isActive = active === item.id;
-
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => navigate(item.path)}
-                      >
-                        <Icon size={22} />
-                        <span>{item.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </nav>
-            );
-          }
-          ''', encoding="utf-8")
-
-          print("App.jsx repaired")
-          print("BottomNav.jsx repaired")
-          PY
-
-      - name: Setup Node
-        uses: actions/setup-node@v5
-        with:
-          node-version: "22"
-          cache: npm
-          cache-dependency-path: project/package-lock.json
-
-      - name: Install dependencies
-        working-directory: project
-        shell: bash
-        run: |
-          npm install
-          npm install @capacitor/core @capacitor/cli @capacitor/android
-
-      - name: Build web app
-        working-directory: project
-        run: npm run build
-
-      - name: Add Android
-        working-directory: project
-        shell: bash
-        run: |
-          npx cap add android
-          npx cap sync android
-
-      - name: Add camera permission
-        working-directory: project
-        shell: bash
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          manifest = Path("android/app/src/main/AndroidManifest.xml")
-
-          if manifest.exists():
-              text = manifest.read_text(encoding="utf-8")
-
-              camera = '<uses-permission android:name="android.permission.CAMERA" />'
-
-              if camera not in text:
-                  text = text.replace(
-                      '<application',
-                      camera + '\n    <application',
-                      1
-                  )
-
-              manifest.write_text(text, encoding="utf-8")
-
-              print("Camera permission added")
-          else:
-              print("AndroidManifest.xml not found")
-          PY
-
-      - name: Fix Kotlin dependencies
-        working-directory: project
-        shell: bash
-        run: |
-          cat >> android/build.gradle <<'EOF'
-
-          allprojects {
-              configurations.all {
-                  resolutionStrategy.eachDependency { details ->
-                      if (details.requested.group == "org.jetbrains.kotlin") {
-                          details.useVersion "1.8.22"
-                      }
-                  }
-              }
-          }
-          EOF
-
-      - name: Setup Java
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: "21"
-
-      - name: Build APK
-        working-directory: project/android
-        shell: bash
-        run: |
-          chmod +x gradlew
-          ./gradlew assembleDebug
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: moy-bilet-apk
-          path: project/android/app/build/outputs/apk/debug/app-debug.apk
+                  justify
