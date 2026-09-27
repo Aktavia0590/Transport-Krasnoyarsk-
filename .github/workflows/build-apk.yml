@@ -42,7 +42,8 @@ jobs:
         run: |
           npx cap add android
           npx cap sync android
-                - name: Fix Kotlin dependencies
+
+      - name: Fix Kotlin dependencies
         working-directory: project
         run: |
           cat >> android/build.gradle <<'EOF'
@@ -62,7 +63,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-
+      
       - name: Build APK
         working-directory: project/android
         run: ./gradlew assembleDebug
