@@ -22,6 +22,11 @@ jobs:
             rmdir "Мой_билет_Android_simple"
           fi
 
+      - name: Fix Android router
+        working-directory: project
+        run: |
+          sed -i "s/BrowserRouter as Router/HashRouter as Router/" src/App.jsx
+
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
@@ -63,7 +68,7 @@ jobs:
         with:
           distribution: temurin
           java-version: '21'
-      
+
       - name: Build APK
         working-directory: project/android
         run: ./gradlew assembleDebug
