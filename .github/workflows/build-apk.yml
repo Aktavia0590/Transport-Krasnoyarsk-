@@ -9,16 +9,10 @@ jobs:
 
     steps:
 
-      # =========================
-      # 1. Скачать репозиторий
-      # =========================
       - name: Checkout
         uses: actions/checkout@v5
 
 
-      # =========================
-      # 2. Распаковать ZIP проекта
-      # =========================
       - name: Extract project
         shell: bash
         run: |
@@ -46,126 +40,108 @@ jobs:
             rmdir "Мой_билет_Android_simple"
           fi
 
-          echo ""
-          echo "===== PROJECT ROOT ====="
+          echo "Project root:"
           ls -la
 
-          echo ""
-          echo "===== SOURCE ====="
-          ls -la src
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: "22"
 
 
-      # =========================
-      # 3. Исправить React Router
-      # =========================
-      - name: Repair React navigation
+      - name: Install dependencies
         working-directory: project
         shell: bash
         run: |
           set -e
 
-          python3 - <<'PY'
-          from pathlib import Path
+          npm install
 
-          app = Path("src/App.jsx")
+          npm install @capacitor/core @capacitor/cli @capacitor/android
 
-          app.write_text(r'''import React from "react";
-          import {
-            MemoryRouter as Router,
-            Routes,
-            Route,
-            useLocation
-          } from "react-router-dom";
 
-          import Home from "./pages/Home";
-          import History from "./pages/History";
-          import Payment from "./pages/Payment";
-          import Menu from "./pages/Menu";
-          import Scan from "./pages/Scan";
-          import { Toaster } from "./components/ui/toaster";
+      - name: Build web app
+        working-directory: project
+        shell: bash
+        run: |
+          set -e
 
-          class ErrorBoundary extends React.Component {
-            constructor(props) {
-              super(props);
+          npm run build
 
-              this.state = {
-                error: null
-              };
-            }
 
-            static getDerivedStateFromError(error) {
-              return {
-                error
-              };
-            }
+      - name: Add Android
+        working-directory: project
+        shell: bash
+        run: |
+          set -e
 
-            render() {
-              if (this.state.error) {
-                return (
-                  <div
-                    style={{
-                      minHeight: "100vh",
-                      display: "flex",
-                      flexDirection: "column",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      padding: 24,
-                      textAlign: "center",
-                      fontFamily: "Arial, sans-serif",
-                      background: "#f9faff"
-                    }}
-                  >
-                    <h2 style={{ marginBottom: 10 }}>
-                      Произошла ошибка
-                    </h2>
+          npx cap add android
+          npx cap sync android
 
-                    <p
-                      style={{
-                        color: "#666",
-                        maxWidth: 500,
-                        lineHeight: 1.5
-                      }}
-                    >
-                      Экран не удалось загрузить.
-                    </p>
 
-                    <button
-                      onClick={() => window.location.reload()}
-                      style={{
-                        marginTop: 16,
-                        padding: "12px 20px",
-                        borderRadius: 10,
-                        border: 0,
-                        background: "#111",
-                        color: "#fff",
-                        fontSize: 16
-                      }}
-                    >
-                      Перезапустить
-                    </button>
-                  </div>
-                );
+      - name: Add camera permission
+        working-directory: project
+        shell: bash
+        run: |
+          set -e
+
+          MANIFEST="android/app/src/main/AndroidManifest.xml"
+
+          if [ ! -f "$MANIFEST" ]; then
+            echo "ERROR: AndroidManifest.xml not found"
+            exit 1
+          fi
+
+          if ! grep -q 'android.permission.CAMERA' "$MANIFEST"; then
+            sed -i 's#<application#<uses-permission android:name="android.permission.CAMERA" />\n    <application#' "$MANIFEST"
+          fi
+
+          echo "Camera permission configured"
+
+
+      - name: Fix Kotlin dependencies
+        working-directory: project
+        shell: bash
+        run: |
+          set -e
+
+          cat >> android/build.gradle <<'EOF'
+
+          allprojects {
+              configurations.all {
+                  resolutionStrategy.eachDependency { details ->
+                      if (details.requested.group == "org.jetbrains.kotlin") {
+                          details.useVersion "1.8.22"
+                      }
+                  }
               }
-
-              return this.props.children;
-            }
           }
 
-          function ScrollToTop() {
-            const { pathname } = useLocation();
+          EOF
 
-            React.useEffect(() => {
-              window.scrollTo(0, 0);
-            }, [pathname]);
 
-            return null;
-          }
+      - name: Setup Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
 
-          function NotFound() {
-            return (
-              <div
-                style={{
-                  minHeight: "100vh",
-                  display: "flex",
-                  alignItems: "center",
-                  justify
+
+      - name: Build APK
+        working-directory: project/android
+        shell: bash
+        run: |
+          set -e
+
+          chmod +x gradlew
+
+          ./gradlew assembleDebug
+
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: moy-bilet-apk
+          path: project/android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
